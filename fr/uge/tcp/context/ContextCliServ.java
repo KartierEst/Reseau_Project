@@ -1,128 +1,84 @@
 package fr.uge.tcp.context;
 
 import fr.uge.tcp.client.ClientChat;
-import fr.uge.tcp.element.MessagePub;
-import fr.uge.tcp.element.MessagePv;
-import fr.uge.tcp.element.MessagePvFile;
-import fr.uge.tcp.reader.*;
+import fr.uge.tcp.frame.MessagePub;
+import fr.uge.tcp.frame.MessagePv;
+import fr.uge.tcp.frame.MessagePvFile;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
-import java.nio.channels.SocketChannel;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
-import java.util.logging.Logger;
 
-public class ContextCliServ {
-    static private int BUFFER_SIZE = 10_000;
-    private static final Charset UTF8 = StandardCharsets.UTF_8;
-    private final SelectionKey key;
-    private final SocketChannel sc;
-    private final ByteBuffer bufferIn = ByteBuffer.allocate(BUFFER_SIZE);
-    private final ByteBuffer bufferOut = ByteBuffer.allocate(BUFFER_SIZE);
-    private final ArrayDeque<ByteBuffer> queue = new ArrayDeque<>();
-    private boolean closed = false;
-    private final IntReader opcodeReader = new IntReader();
-    private final MessagePubReader messageReader = new MessagePubReader();
-    private final StringReader serverReader = new StringReader();
-    private final MessagePvReader messagePvReader = new MessagePvReader();
-    private final StringReader errorPvReader = new StringReader();
-    private final MessagePvFileReader messagePvFileReader = new MessagePvFileReader();
-
-    static private Logger logger = Logger.getLogger(ContextCliServ.class.getName());
-
-    private int opcode = -1;
-
-
-
-    private ContextCliServ(SelectionKey key) {
-        this.key = key;
-        this.sc = (SocketChannel) key.channel();
+public class ContextCliServ extends Context{
+    public ContextCliServ(SelectionKey key, ClientChat client) {
+        super(key,client);
     }
 
-    private void processPrivateMessage() {
+    public void processPrivateMessage() {
+        reader = allReader.reader(opcode);
         while (bufferIn.hasRemaining()) {
-            switch (messagePvReader.process(bufferIn)) {
+            switch (reader.process(bufferIn)) {
                 case ERROR:
                     logger.info("Error processing private reader");
                     silentlyClose();
                 case REFILL:
                     return;
                 case DONE:
-                    var getPrivateReader = messagePvReader.get();
+                    var getPrivateReader = (MessagePv) reader.get();
                     if (getPrivateReader == null) {
                         logger.info("Get value at null");
                         return;
                     }
                     System.out.println("\nYou have a message from : " + getPrivateReader.username_src());
                     System.out.println(getPrivateReader.username_src() + " : " + getPrivateReader.message());
-                    messagePvReader.reset();
+                    reader.reset();
                     break;
             }
         }
     }
 
-    private void processPrivateFileMessage() {
+    public void processPrivateFileMessage() {
+        reader = allReader.reader(opcode);
         while (bufferIn.hasRemaining()) {
-            switch (messagePvFileReader.process(bufferIn)) {
+            switch (reader.process(bufferIn)) {
                 case ERROR:
                     logger.info("Error processing file reading");
                     silentlyClose();
                 case REFILL:
                     return;
                 case DONE:
-                    var getFileReader = messagePvFileReader.get();
+                    var getFileReader = (MessagePvFile) reader.get();
                     if (getFileReader == null) {
                         logger.info("Get value at null");
                         return;
                     }
                     System.out.println("You have a message with a file from : " + getFileReader.username_src());
                     System.out.println(getFileReader.username_src() + " : " + getFileReader.filename());
-                    messagePvFileReader.reset();
+                    reader.reset();
                     break;
             }
         }
     }
 
-    private void processPvMessageError() {
+    public void processPvMessageError() {
+        reader = allReader.reader(opcode);
         while (bufferIn.hasRemaining()) {
-            switch (errorPvReader.process(bufferIn)) {
+            switch (reader.process(bufferIn)) {
                 case ERROR:
                     logger.info("Error processing private message (Client side)");
                     silentlyClose();
                 case REFILL:
                     return;
                 case DONE:
-                    var errorPv = errorPvReader.get();
+                    var errorPv = (String) reader.get();
                     if (errorPv == null) {
                         logger.info("Get value at null");
                         return;
                     }
                     logger.info(errorPv);
-                    errorPvReader.reset();
+                    reader.reset();
                     break;
             }
-        }
-    }
-
-    private void processOpCode() {
-        switch (opcodeReader.process(bufferIn)) {
-            case ERROR:
-                logger.info("Error processing opcode");
-                silentlyClose();
-            case REFILL:
-                return;
-            case DONE:
-                var opReader = opcodeReader.get();
-                if (opReader == null) {
-                    logger.info("Get value at null");
-                    return;
-                }
-                opcode = opReader;
-                opcodeReader.reset();
-                break;
         }
     }
 
@@ -135,21 +91,22 @@ public class ContextCliServ {
      *
      */
     private void processIn() {
+        reader = allReader.reader(opcode);
         while (bufferIn.hasRemaining()) {
-            switch (messageReader.process(bufferIn)) {
+            switch (reader.process(bufferIn)) {
                 case ERROR:
                     logger.info("Error processing message reader");
                     silentlyClose();
                 case REFILL:
                     return;
                 case DONE:
-                    var reader = messageReader.get();
-                    if (reader == null) {
+                    var user = (MessagePub) reader.get();
+                    if (user == null) {
                         logger.info("Get value at null");
                         return;
                     }
-                    System.out.println(reader.username() + " : " + reader.message());
-                    messageReader.reset();
+                    System.out.println(user.username() + " : " + user.message());
+                    reader.reset();
                     break;
             }
         }
@@ -160,7 +117,8 @@ public class ContextCliServ {
      *
      * @param msg
      */
-    private void queueMessage(MessagePub msg) {
+    public void queueMessage(MessagePub msg) {
+        System.out.println("message pub");
         var opcode = msg.opcode();
         var servername = UTF8.encode(msg.servername());
         var username = UTF8.encode(msg.username());
@@ -179,7 +137,8 @@ public class ContextCliServ {
         updateInterestOps();
     }
 
-    private void queuePvMessage(MessagePv msg) {
+    @Override
+    public void queuePvMessage(MessagePv msg) {
         var opcode = msg.opcode();
         var servername_src = UTF8.encode(msg.servername_src());
         var servername_dst = UTF8.encode(msg.servername_dst());
@@ -204,7 +163,7 @@ public class ContextCliServ {
         updateInterestOps();
     }
 
-    private void queuePvMessageFile(MessagePvFile msg) {
+    public void queuePvMessageFile(MessagePvFile msg) {
         var opcode = msg.opcode();
         var nbblock = msg.nbblock();
         var blocksize = msg.blocksize();
@@ -237,61 +196,6 @@ public class ContextCliServ {
     }
 
     /**
-     * Try to fill bufferOut from the message queue
-     *
-     */
-    private void processOut() {
-        while (!queue.isEmpty() && bufferOut.hasRemaining()) {
-            var msg = queue.peek();
-            if (!msg.hasRemaining()) {
-                queue.poll();
-                continue;
-            }
-            if (msg.remaining() <= bufferOut.remaining()) {
-                bufferOut.put(msg);
-            } else {
-                var oldLimit = msg.limit();
-                msg.limit(bufferOut.remaining());
-                bufferOut.put(msg);
-                msg.limit(oldLimit);
-            }
-        }
-    }
-
-    /**
-     * Update the interestOps of the key looking only at values of the boolean
-     * closed and of both ByteBuffers.
-     *
-     * The convention is that both buffers are in write-mode before the call to
-     * updateInterestOps and after the call. Also it is assumed that process has
-     * been be called just before updateInterestOps.
-     */
-
-    private void updateInterestOps() {
-        var interesOps = 0;
-        if(!closed && bufferIn.hasRemaining()) {
-            interesOps |= SelectionKey.OP_READ;
-        }
-        if(bufferOut.position() != 0){
-            interesOps |= SelectionKey.OP_WRITE;
-        }
-        if(interesOps == 0) {
-            silentlyClose();
-            return;
-        }
-        key.interestOps(interesOps);
-    }
-
-    private void silentlyClose() {
-        try {
-            sc.close();
-            logger.info("it's impossible to connect because your login already exist or have a problem with the server");
-        } catch (IOException e) {
-            // ignore exception
-        }
-    }
-
-    /**
      * Performs the read action on sc
      *
      * The convention is that both buffers are in write-mode before the call to
@@ -299,11 +203,14 @@ public class ContextCliServ {
      *
      * @throws IOException
      */
-    private void doRead() throws IOException {
+    public void doRead() throws IOException {
+        System.out.println("doRead");
         if (sc.read(bufferIn) == -1) {
             closed = true;
         }
+        opcode = -1;
         processOpCode();
+        System.out.println(opcode);
         switch (opcode){
             case 3 -> silentlyClose();
             case 4 -> processIn();
@@ -325,18 +232,9 @@ public class ContextCliServ {
      * @param login
      */
 
-    private void doWrite(String login) throws IOException {
-        bufferOut.flip();
-        sc.write(bufferOut);
-        bufferOut.compact();
-        processOut();
-        updateInterestOps();
+    public void doWrite(String login) throws IOException {
+        System.out.println("doWrite");
+        write();
     }
 
-    public void doConnect() throws IOException {
-        if (!sc.finishConnect()) {
-            return; // the selector gave a bad hint
-        }
-        key.interestOps(SelectionKey.OP_WRITE);
-    }
 }

@@ -1,4 +1,4 @@
-package fr.uge.tcp.element;
+package fr.uge.tcp.frame;
 
 public record IPv4Adress(byte a,byte b,byte c,byte d,int port) implements IPvAdress {
     public IPv4Adress{

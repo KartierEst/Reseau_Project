@@ -1,4 +1,4 @@
-package fr.uge.tcp.element;
+package fr.uge.tcp.frame;
 
 public record IPv6Adress(short a,short b,short c,short d,short e,short f,short g,short h,int port) implements IPvAdress {
     public IPv6Adress{

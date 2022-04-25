@@ -1,8 +1,8 @@
-package fr.uge.tcp.element;
+package fr.uge.tcp.frame;
 
 import java.util.Objects;
 
-public record MessagePv(int opcode, String servername_src, String servername_dst, String username_src, String username_dst, String message) {
+public record MessagePv(int opcode, String servername_src, String servername_dst, String username_src, String username_dst, String message) implements Frame {
     public MessagePv {
         Objects.requireNonNull(servername_src);
         Objects.requireNonNull(servername_dst);

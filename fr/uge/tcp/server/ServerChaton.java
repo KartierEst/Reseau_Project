@@ -1,7 +1,9 @@
 package fr.uge.tcp.server;
 
-import fr.uge.tcp.element.*;
-import fr.uge.tcp.reader.*;
+//import fr.uge.tcp.context.*;
+import fr.uge.tcp.frame.*;
+import fr.uge.tcp.reader.AllReader;
+import fr.uge.tcp.reader.Reader;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -20,21 +22,16 @@ public class ServerChaton {
     private class Context {
         private final SelectionKey key;
         private final SocketChannel sc;
-        //créer un reader générique qui contient tout les readers
-        private final IntReader opcodeReader = new IntReader();
-        private final MessagePubReader reader = new MessagePubReader();
-        private final MessagePvReader messagePvReader = new MessagePvReader();
-        private final MessagePvFileReader messagePvFileReader = new MessagePvFileReader();
-        private final StringReader userReader = new StringReader();
-        private final InitFusionReader initFusionReader = new InitFusionReader();
-        private final IPv6AdressReader iPv6AdressReader = new IPv6AdressReader();
-        private final IPv4AdressReader iPv4AdressReader = new IPv4AdressReader();
+        private int opcode = -1;
+        private final AllReader allReader = new AllReader();
+//      private final IntReader opcodeReader = new IntReader();
+        private Reader reader;
+
         private final ByteBuffer bufferIn = ByteBuffer.allocate(BUFFER_SIZE);
         private final ByteBuffer bufferOut = ByteBuffer.allocate(BUFFER_SIZE);
         private static final Logger logger = Logger.getLogger(ServerChaton.class.getName());
         private final ArrayDeque<ByteBuffer> queue = new ArrayDeque<>();
         private boolean closed = false;
-        private int opcode = -1;
 
         private Context(SelectionKey key) {
             this.key = key;
@@ -42,20 +39,21 @@ public class ServerChaton {
         }
 
         private void processConnected() {
-            switch (userReader.process(bufferIn)) {
+            reader = allReader.reader(opcode);
+            switch (reader.process(bufferIn)) {
                 case ERROR:
                     logger.info("Error processing user reader");
                     silentlyClose();
                 case REFILL:
                     return;
                 case DONE:
-                    var user = userReader.get();
+                    String user = (String) reader.get();
                     if (user == null) {
                         logger.info("Get value at null");
                         return;
                     }
                     connect(key,user);
-                    userReader.reset();
+                    reader.reset();
                     break;
             }
         }
@@ -69,50 +67,52 @@ public class ServerChaton {
         }
 
         private void processPrivateMessage() {
+            reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
-                switch (messagePvReader.process(bufferIn)) {
+                switch (reader.process(bufferIn)) {
                     case ERROR:
                         logger.info("private message reader error (Server side)");
                         silentlyClose();
                     case REFILL:
                         return;
                     case DONE:
-                        var msgPvR = messagePvReader.get();
+                        var msgPvR = reader.get();
                         if (msgPvR == null) {
                             logger.info("Get value at null");
                             return;
                         }
-                        msgPv(msgPvR);
-                        messagePvReader.reset();
+                        msgPv((MessagePv) msgPvR);
+                        reader.reset();
                         break;
                 }
             }
         }
 
         private void processPrivateFileMessage() {
+            reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
-                switch (messagePvFileReader.process(bufferIn)) {
+                switch (reader.process(bufferIn)) {
                     case ERROR:
                         silentlyClose();
                     case REFILL:
                         return;
                     case DONE:
-                        var msgPvFile = messagePvFileReader.get();
+                        var msgPvFile = reader.get();
                         if (msgPvFile == null) {
                             logger.info("Get value at null");
                             return;
                         }
-                        msgPvFile(msgPvFile);
-                        messagePvFileReader.reset();
+                        msgPvFile((MessagePvFile) msgPvFile);
+                        reader.reset();
                         break;
                 }
             }
         }
 
         private void processInitFusion() {
-            System.out.println("init");
+            reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
-                switch (initFusionReader.process(bufferIn)) {
+                switch (reader.process(bufferIn)) {
                     case ERROR:
                         System.out.println("error");
                         silentlyClose();
@@ -121,35 +121,36 @@ public class ServerChaton {
                         return;
                     case DONE:
                         System.out.println("done");
-                        var initFus = initFusionReader.get();
+                        var initFus = reader.get();
                         if (initFus == null) {
                             logger.info("Get value at null");
                             return;
                         }
                         System.out.println("ca passe ?");
-                        initFusion(initFus);
-                        initFusionReader.reset();
+                        initFusion((InitFusion) initFus);
+                        reader.reset();
                         break;
                 }
             }
         }
 
         private void processInitFusionOk() {
+            reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
-                switch (initFusionReader.process(bufferIn)) {
+                switch (reader.process(bufferIn)) {
                     case ERROR:
                         silentlyClose();
                     case REFILL:
                         return;
                     case DONE:
-                        var initFusR = initFusionReader.get();
+                        var initFusR = reader.get();
                         if (initFusR == null) {
                             logger.info("Get value at null");
                             return;
                         }
                         System.out.println("ca passe ok");
-                        fusionOk(initFusR);
-                        initFusionReader.reset();
+                        fusionOk((InitFusion) initFusR);
+                        reader.reset();
                         break;
                 }
             }
@@ -168,19 +169,20 @@ public class ServerChaton {
         }
 
         private void processOpCode() {
-            switch (opcodeReader.process(bufferIn)) {
+            reader = allReader.reader(opcode);
+            switch (reader.process(bufferIn)) {
                 case ERROR:
                     silentlyClose();
                 case REFILL:
                     return;
                 case DONE:
-                    var codeReader = opcodeReader.get();
+                    var codeReader = reader.get();
                     if (codeReader == null) {
                         logger.info("Get value at null");
                         return;
                     }
-                    opcode = codeReader;
-                    opcodeReader.reset();
+                    opcode = (int) codeReader;
+                    reader.reset();
                     break;
             }
         }
@@ -192,6 +194,7 @@ public class ServerChaton {
          * after the call
          */
         private void processIn() {
+            reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
                 switch (reader.process(bufferIn)) {
                     case ERROR:
@@ -204,7 +207,7 @@ public class ServerChaton {
                             logger.info("Get value at null");
                             return;
                         }
-                        broadcast(r);
+                        broadcast((MessagePub) r);
                         reader.reset();
                         break;
                 }
@@ -425,6 +428,8 @@ public class ServerChaton {
                             .putShort(ipv6.g())
                             .putShort(ipv6.h());
                 }
+                default:
+                    throw new IllegalStateException("Unexpected value: " + localAddress);
             }*/
         }
         public void queueChangeLeaderIpv6(IPvAdress localAdress) {
@@ -500,8 +505,9 @@ public class ServerChaton {
                 logger.info("Connection closed by " + sc.getRemoteAddress());
                 closed = true;
             }
+            opcode = -1;
             processOpCode();
-            System.out.println(opcode);
+            logger.info("doRead " + opcode);
             switch (opcode){
                 case 1 -> processConnected();
                 case 4 -> processIn();
@@ -536,6 +542,7 @@ public class ServerChaton {
                 updateInterestOps();
                 return;
             }
+            logger.info("doWrite " + opcode);
             bufferOut.flip();
             sc.write(bufferOut);
             bufferOut.compact();
@@ -568,7 +575,7 @@ public class ServerChaton {
     private static final Charset UTF8 = StandardCharsets.UTF_8;
     private static final int BUFFER_SIZE = 1_024;
     private static final Logger logger = Logger.getLogger(ServerChaton.class.getName());
-    private final HashMap<String,Context> clients = new HashMap<>();
+    private final HashMap<String, Context> clients = new HashMap<>();
     private final HashMap<String,Context> serverChatons = new HashMap<>();
     private String serverMom;
     private String command;
@@ -579,6 +586,7 @@ public class ServerChaton {
     //private final ArrayDeque<ByteBuffer> queue = new ArrayDeque<>();
 
     private String adresseFusion = null;
+
     private String[] addr = null;
     private int portFusion = -1;
 
@@ -599,6 +607,26 @@ public class ServerChaton {
         this.serverMom = servername;
         this.sc = SocketChannel.open();
     }
+
+    public String getServername() {
+        return servername;
+    }
+
+    /*public HashMap<String, ContextServServ> getServerChatons() {
+        return serverChatons;
+    }
+
+    public String getAdresseFusion() {
+        return adresseFusion;
+    }
+
+    public String[] getAddr() {
+        return addr;
+    }
+
+    public int getPortFusion() {
+        return portFusion;
+    }*/
 
     public void launch() throws IOException {
         serverSocketChannel.configureBlocking(false);
@@ -650,9 +678,8 @@ public class ServerChaton {
         }
         client.configureBlocking(false);
         var keyClient = client.register(selector, SelectionKey.OP_READ);
+        //keyClient.attach(new ContextCoServ(keyClient,this));
         keyClient.attach(new Context(keyClient));
-        //keyClient.attach(new Context());
-        //System.out.println(serverSocketChannel.getLocalAddress());
     }
 
     private void silentlyClose(SelectionKey key) {
@@ -679,17 +706,23 @@ public class ServerChaton {
         var client = clients.get(user);
         if (client != null) {
             logger.info("the user already exist");
-            client = (Context) key.attachment();
+            /*var clientCo = (ContextCoServ) key.attachment();
+            clientCo.connexionResp(true);
+            var clientCo = (Context) key.attachment();*/
             client.connexionResp(true);
         }
         else {
-            clients.put(user,(Context) key.attachment());
-            client = clients.get(user);
-            client.connexionResp(false);
+            /*var ctx = new ContextServCli(key,this);
+            var clientCo = (ContextCoServ) key.attachment();
+            clientCo.connexionResp(false);
+            clients.put(user,ctx);*/
+            var clientCo = (Context) key.attachment();
+            clients.put(user,clientCo);
+            clients.get(user).connexionResp(false);
         }
     }
 
-    private void msgPv(MessagePv messagePv) {
+    public void msgPv(MessagePv messagePv) {
         Context queue = clients.get(messagePv.username_dst());
         Context username_src = clients.get(messagePv.username_src());
         if(username_src == null){
@@ -705,7 +738,7 @@ public class ServerChaton {
         }
     }
 
-    private void msgPvFile(MessagePvFile messagePvFile) {
+    public void msgPvFile(MessagePvFile messagePvFile) {
         var queue = clients.get(messagePvFile.username_dst());
         var username_src = clients.get(messagePvFile.username_src());
         if(username_src == null){
@@ -721,7 +754,7 @@ public class ServerChaton {
         }
     }
 
-    private void initFusion(InitFusion initFusion) {
+    public void initFusion(InitFusion initFusion) {
         try {
             var serveurnames = serverChatons.keySet().stream().toList();
             //var queue = serverChatons.get(serverMom);
@@ -730,15 +763,19 @@ public class ServerChaton {
                 case IPv4Adress ipv4 : adr += ipv4.toString();
                 case IPv6Adress ipv6 : adr += ipv6.toString();
             }*/
-            var fusion = new InetSocketAddress(Objects.requireNonNull(adr),initFusion.localAddress().port());
+            /*var fusion = new InetSocketAddress(Objects.requireNonNull(adr),initFusion.localAddress().port());
             sc.configureBlocking(false);
-
+            System.out.println(adr);
             var key = sc.register(selector,SelectionKey.OP_WRITE);
             sc.connect(fusion);
             key.attach(new Context(key));
             var queue = (Context) key.attachment();
-
-            //var queue = (Context) keyServer.attachment();
+            for(var key : selector.keys()){
+                System.out.println(key.channel());
+            }*/
+            var key = selector.keys().stream().toList().get(selector.keys().size()-1);
+            //var keyServer = sc.register(selector,SelectionKey.OP_WRITE);
+            var queue = (Context) key.attachment();
             if(this.servername.equals(serverMom)){
                 //Ici mettre la verification des noms differents dans les serveurs
                 if(!initFusion.servers().isEmpty()) {
@@ -754,11 +791,13 @@ public class ServerChaton {
                 var addr = addresse.split(":");
                 var port = Integer.parseInt(addr[addr.length-1]);
                 if(addr.length < 3){
+                    logger.info("ipv4");
                     var parseIpv4 = addresse.split("\\.");
                     var ipv4 = new IPv4Adress(Byte.parseByte(parseIpv4[0]),Byte.parseByte(parseIpv4[1]),Byte.parseByte(parseIpv4[2]),Byte.parseByte(parseIpv4[3]),port);
                     queue.queueInitFusionIpv4(new InitFusion(9, servername, ipv4, serveurnames));
                 }
                 else {
+                    logger.info("ipv6");
                     var ipv6 = new IPv6Adress(Short.parseShort(addr[0].substring(1)), Short.parseShort(addr[1]), Short.parseShort(addr[2]), Short.parseShort(addr[3]), Short.parseShort(addr[4])
                             , Short.parseShort(addr[5]), Short.parseShort(addr[6]), Short.parseShort(addr[7].substring(0, addr[7].length() - 1)), port);
                     queue.queueInitFusionIpv6(new InitFusion(9, servername, ipv6, serveurnames));
@@ -774,7 +813,7 @@ public class ServerChaton {
         }
     }
 
-    private void fusionOk(InitFusion initFusion) {
+    public void fusionOk(InitFusion initFusion) {
         if(servername.length() < initFusion.servername().length()){
             /*Mon idee : Transformer la liste de String d'initFusion par une liste de Serveur, ainsi on pourra parcourir chaque serveur facilement
             Et du coup acceder a tous les champs de chaque serveur et ainsi proceder a la fusion en ajoutant les serveurs manquant au 2 mega-serveurs.
@@ -788,21 +827,22 @@ public class ServerChaton {
             // envoyer un packet 15 comme quoi c'est bien fais
             var adress = initFusion.localAddress();
             var ctx = serverChatons.get(initFusion.servername());
-
-
+            logger.info("1er cas");
         }
         else if(servername.length() > initFusion.servername().length()){
             for(var context : serverChatons.values()){
                 context.queueChangeLeader(initFusion.localAddress());
             }
+            logger.info("2eme cas");
         }
         else if (servername.compareTo(initFusion.servername()) > 0) {
-            //TODO
+            logger.info("3eme cas");
         }
         else if (servername.compareTo(initFusion.servername()) < 0) {
             for(var context : serverChatons.values()){
                 context.queueChangeLeader(initFusion.localAddress());
             }
+            logger.info("4eme cas");
         }
         fusion = false;
     }
@@ -834,7 +874,7 @@ public class ServerChaton {
                     logger.warning("Unknown command: " + command + " -> FUSION ipaddress port");
                 } else {
                     if (!fusion) {
-                        fusion = true;
+                        //fusion = true;
                         if (this.servername.equals(serverMom)) {
                             var serveurnames = serverChatons.keySet().stream().toList();
                             //var queue = serverChatons.get(serverMom);
@@ -846,8 +886,9 @@ public class ServerChaton {
 
                             sc.configureBlocking(false);
                             var key = sc.register(selector,SelectionKey.OP_CONNECT);
-                            sc.connect(tofusion);
                             key.attach(new Context(key));
+                            sc.connect(tofusion);
+                            //key.attach(new Context(key));
                             //var queue = (Context) key.attachment();
                             //queue.updateInterestOps();
 

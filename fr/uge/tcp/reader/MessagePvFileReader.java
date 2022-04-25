@@ -1,7 +1,7 @@
 package fr.uge.tcp.reader;
 
 
-import fr.uge.tcp.element.MessagePvFile;
+import fr.uge.tcp.frame.MessagePvFile;
 
 import java.nio.ByteBuffer;
 

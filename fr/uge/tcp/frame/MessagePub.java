@@ -1,8 +1,8 @@
-package fr.uge.tcp.element;
+package fr.uge.tcp.frame;
 
 import java.util.Objects;
 
-public record MessagePub(int opcode, String servername, String username, String message) {
+public record MessagePub(int opcode, String servername, String username, String message) implements Frame {
     public MessagePub{
         Objects.requireNonNull(servername);
         Objects.requireNonNull(username);

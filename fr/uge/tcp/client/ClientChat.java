@@ -1,8 +1,9 @@
 package fr.uge.tcp.client;
 
 
-import fr.uge.tcp.element.*;
-import fr.uge.tcp.reader.*;
+import fr.uge.tcp.frame.*;
+import fr.uge.tcp.reader.AllReader;
+import fr.uge.tcp.reader.Reader;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -19,7 +20,6 @@ import java.util.logging.Logger;
 
 public class ClientChat {
 
-    private static final Charset UTF8 = StandardCharsets.UTF_8;
  
     private class Context {
         private final SelectionKey key;
@@ -28,13 +28,9 @@ public class ClientChat {
         private final ByteBuffer bufferOut = ByteBuffer.allocate(BUFFER_SIZE);
         private final ArrayDeque<ByteBuffer> queue = new ArrayDeque<>();
         private boolean closed = false;
-        private final IntReader opcodeReader = new IntReader();
-        private final MessagePubReader messageReader = new MessagePubReader();
-        private final StringReader serverReader = new StringReader();
-        private final MessagePvReader messagePvReader = new MessagePvReader();
-        private final StringReader errorPvReader = new StringReader();
-        private final MessagePvFileReader messagePvFileReader = new MessagePvFileReader();
         private int opcode = -1;
+        private final AllReader allReader = new AllReader();
+        private Reader reader;
 
 
 
@@ -44,106 +40,111 @@ public class ClientChat {
         }
 
         private void processConnected() {
+            reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
-                switch (serverReader.process(bufferIn)) {
+                switch (reader.process(bufferIn)) {
                     case ERROR:
                         logger.info("Error processing server reader");
                         silentlyClose();
                     case REFILL:
                         return;
                     case DONE:
-                        var getServerReader = serverReader.get();
+                        var getServerReader = reader.get();
                         if (getServerReader == null) {
                             logger.info("Get value at null");
                             return;
                         }
-                        connect(getServerReader);
-                        serverReader.reset();
+                        connect((String) getServerReader);
+                        reader.reset();
                         break;
                 }
             }
         }
 
         private void processPrivateMessage() {
+            reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
-                switch (messagePvReader.process(bufferIn)) {
+                switch (reader.process(bufferIn)) {
                     case ERROR:
                         logger.info("Error processing private reader");
                         silentlyClose();
                     case REFILL:
                         return;
                     case DONE:
-                        var getPrivateReader = messagePvReader.get();
+                        var getPrivateReader = (MessagePv) reader.get();
                         if (getPrivateReader == null) {
                             logger.info("Get value at null");
                             return;
                         }
                         System.out.println("\nYou have a message from : " + getPrivateReader.username_src());
                         System.out.println(getPrivateReader.username_src() + " : " + getPrivateReader.message());
-                        messagePvReader.reset();
+                        reader.reset();
                         break;
                 }
             }
         }
 
         private void processPrivateFileMessage() {
+            reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
-                switch (messagePvFileReader.process(bufferIn)) {
+                switch (reader.process(bufferIn)) {
                     case ERROR:
                         logger.info("Error processing file reading");
                         silentlyClose();
                     case REFILL:
                         return;
                     case DONE:
-                        var getFileReader = messagePvFileReader.get();
+                        var getFileReader = (MessagePvFile) reader.get();
                         if (getFileReader == null) {
                             logger.info("Get value at null");
                             return;
                         }
                         System.out.println("You have a message with a file from : " + getFileReader.username_src());
                         System.out.println(getFileReader.username_src() + " : " + getFileReader.filename());
-                        messagePvFileReader.reset();
+                        reader.reset();
                         break;
                 }
             }
         }
 
         private void processPvMessageError() {
+            reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
-                switch (errorPvReader.process(bufferIn)) {
+                switch (reader.process(bufferIn)) {
                     case ERROR:
                         logger.info("Error processing private message (Client side)");
                         silentlyClose();
                     case REFILL:
                         return;
                     case DONE:
-                        var errorPv = errorPvReader.get();
+                        var errorPv = (String) reader.get();
                         if (errorPv == null) {
                             logger.info("Get value at null");
                             return;
                         }
                         logger.info(errorPv);
-                        errorPvReader.reset();
+                        reader.reset();
                         break;
                 }
             }
         }
 
         private void processOpCode() {
-            switch (opcodeReader.process(bufferIn)) {
+            reader = allReader.reader(opcode);
+            switch (reader.process(bufferIn)) {
                 case ERROR:
                     logger.info("Error processing opcode");
                     silentlyClose();
                 case REFILL:
                     return;
                 case DONE:
-                    var opReader = opcodeReader.get();
+                    var opReader = reader.get();
                     if (opReader == null) {
                         logger.info("Get value at null");
                         return;
                     }
-                    opcode = opReader;
-                    opcodeReader.reset();
+                    opcode = (int) opReader;
+                    reader.reset();
                     break;
             }
         }
@@ -157,21 +158,22 @@ public class ClientChat {
          *
          */
         private void processIn() {
+            reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
-                switch (messageReader.process(bufferIn)) {
+                switch (reader.process(bufferIn)) {
                     case ERROR:
                         logger.info("Error processing message reader");
                         silentlyClose();
                     case REFILL:
                         return;
                     case DONE:
-                        var reader = messageReader.get();
+                        var user = (MessagePub) reader.get();
                         if (reader == null) {
                             logger.info("Get value at null");
                             return;
                         }
-                        System.out.println(reader.username() + " : " + reader.message());
-                        messageReader.reset();
+                        System.out.println(user.username() + " : " + user.message());
+                        reader.reset();
                         break;
                 }
             }
@@ -262,7 +264,7 @@ public class ClientChat {
          * Try to fill bufferOut from the message queue
          *
          */
-        private void processOut() {
+       private void processOut() {
             while (!queue.isEmpty() && bufferOut.hasRemaining()) {
                 var msg = queue.peek();
                 if (!msg.hasRemaining()) {
@@ -325,6 +327,7 @@ public class ClientChat {
             if (sc.read(bufferIn) == -1) {
                 closed = true;
             }
+            opcode = -1;
             processOpCode();
             switch (opcode){
                 case 1 -> {}
@@ -373,11 +376,13 @@ public class ClientChat {
         }
     }
 
-    static private int BUFFER_SIZE = 10_000;
-    static private Logger logger = Logger.getLogger(ClientChat.class.getName());
+    static private final int BUFFER_SIZE = 10_000;
+    static private final Logger logger = Logger.getLogger(ClientChat.class.getName());
+    private static final Charset UTF8 = StandardCharsets.UTF_8;
 
     private final SocketChannel sc;
     private final Selector selector;
+    private SelectionKey key;
     private final InetSocketAddress serverAddress;
     private final String path;
     private final String login;
@@ -490,13 +495,17 @@ public class ClientChat {
         }
         this.servername = server;
         logger.info("Welcome to the serveur : " + server);
+        //uniqueContextF = new ContextCliServ(key,this);
+        //key.attach(uniqueContextF);
     }
 
 
 
     public void launch() throws IOException {
         sc.configureBlocking(false);
-        var key = sc.register(selector, SelectionKey.OP_CONNECT);
+        key = sc.register(selector, SelectionKey.OP_CONNECT);
+        //uniqueContextF = new ContextCoCli(key,this);
+        //key.attach(uniqueContextF);
         uniqueContext = new Context(key);
         key.attach(uniqueContext);
         sc.connect(serverAddress);

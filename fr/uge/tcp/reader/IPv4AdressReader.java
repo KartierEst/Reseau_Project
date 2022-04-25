@@ -1,7 +1,7 @@
 package fr.uge.tcp.reader;
 
 
-import fr.uge.tcp.element.IPv4Adress;
+import fr.uge.tcp.frame.IPv4Adress;
 
 import java.nio.ByteBuffer;
 

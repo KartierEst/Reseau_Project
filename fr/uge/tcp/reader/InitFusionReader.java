@@ -1,7 +1,7 @@
 package fr.uge.tcp.reader;
 
-import fr.uge.tcp.element.IPv6Adress;
-import fr.uge.tcp.element.InitFusion;
+import fr.uge.tcp.frame.IPv6Adress;
+import fr.uge.tcp.frame.InitFusion;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;

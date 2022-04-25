@@ -1,7 +1,7 @@
 package fr.uge.tcp.reader;
 
 
-import fr.uge.tcp.element.MessagePub;
+import fr.uge.tcp.frame.MessagePub;
 
 import java.nio.ByteBuffer;
 
