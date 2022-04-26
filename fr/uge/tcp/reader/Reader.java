@@ -2,7 +2,7 @@ package fr.uge.tcp.reader;
 
 import java.nio.ByteBuffer;
 
-public interface Reader<T> {
+public interface Reader<T>  {
 
     public static enum ProcessStatus { DONE, REFILL, ERROR };
 

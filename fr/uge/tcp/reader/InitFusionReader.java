@@ -68,8 +68,10 @@ public class InitFusionReader implements Reader<InitFusion> {
                     return ProcessStatus.ERROR;
                 }
                 intReader.reset();
+                System.out.println("NB MEMBER " + nb_members);
                 if(nb_members == 0){
                    state = State.DONE;
+                   return status;
                 }
                 else {
                     state = State.WAITING_SERVERS;
