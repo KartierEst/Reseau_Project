@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.zip.CheckedOutputStream;
 
 public class ServerChaton {
 
@@ -178,10 +179,32 @@ public class ServerChaton {
                         return;
                     }
                     var ipleader = (IPvAdress) codeReader;
+                    changeClientServer(ipleader);
                     reader.reset();
                     break;
             }
         }
+
+        private void processMergeLeader(){
+            reader = allReader.reader(opcode);
+            switch (reader.process(bufferIn)) {
+                case ERROR:
+                    silentlyClose();
+                case REFILL:
+                    return;
+                case DONE:
+                    var codeReader = reader.get();
+                    if (codeReader == null) {
+                        logger.info("Get value at null");
+                        return;
+                    }
+                    var str = (String) codeReader;
+                    serverMom = str;
+                    reader.reset();
+                    break;
+            }
+        }
+
 
         private void processOpCode() {
             reader = allReader.reader(opcode);
@@ -397,6 +420,17 @@ public class ServerChaton {
             updateInterestOps();
         }
 
+        public void queueFusionMerge(String servername) {
+            var opcode = 15;
+            var buffip = UTF8.encode(servername);
+            var buffer = ByteBuffer.allocate(Integer.BYTES*2 + buffip.remaining());
+            buffer.putInt(opcode)
+                    .putInt(buffip.remaining())
+                    .put(buffip);
+            queue.offer(buffer.flip());
+            processOut();
+            updateInterestOps();
+        }
 
         /**
          * Try to fill bufferOut from the message queue
@@ -481,6 +515,7 @@ public class ServerChaton {
                 case 12 -> processInitFusionRequest();
                 case 13 -> processInitFusionRequestLoad();
                 case 14 -> processChangeLeader();
+                case 15 -> processMergeLeader();
             }
             updateInterestOps();
         }
@@ -531,8 +566,6 @@ public class ServerChaton {
             }
         }
     }
-
-
     private static final Charset UTF8 = StandardCharsets.UTF_8;
     private static final int BUFFER_SIZE = 1_024;
     private static final Logger logger = Logger.getLogger(ServerChaton.class.getName());
@@ -645,6 +678,14 @@ public class ServerChaton {
 
     private void silentlyClose(SelectionKey key) {
         Channel sc = key.channel();
+        try {
+            sc.close();
+        } catch (IOException e) {
+            // ignore exception
+        }
+    }
+
+    private void silentlyClose(Channel sc) {
         try {
             sc.close();
         } catch (IOException e) {
@@ -777,6 +818,9 @@ public class ServerChaton {
 
     public void fusionOk(InitFusion initFusion) {
         var key = selector.keys().stream().toList().get(selector.keys().size()-1);
+        for(var k : selector.keys()){
+            System.out.println(k);
+        }
         Context ctx = (Context) key.attachment();
         serverChatons.put(initFusion.servername(),ctx);
         if(servername.length() < initFusion.servername().length()){
@@ -810,6 +854,20 @@ public class ServerChaton {
             logger.info("4eme cas");
         }
         fusion = false;
+    }
+
+    private void changeClientServer(IPvAdress ipleader) {
+        try {
+            var tofusion = new InetSocketAddress(ipleader.toString(), ipleader.port());
+            sc.configureBlocking(false);
+            sc.connect(tofusion);
+            var key = selector.keys().stream().toList().get(selector.keys().size()-2);
+            var ctx = (Context) key.attachment();
+            ctx.queueFusionMerge(servername);
+        } catch (IOException e){
+            logger.info("sheesh");
+        }
+        //silentlyClose(sc);
     }
 
     private void sendCommand(String msg) throws InterruptedException {

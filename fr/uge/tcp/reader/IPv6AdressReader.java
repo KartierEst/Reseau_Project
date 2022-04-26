@@ -2,6 +2,7 @@ package fr.uge.tcp.reader;
 
 
 import fr.uge.tcp.frame.IPv6Adress;
+import fr.uge.tcp.frame.IPvAdress;
 
 import java.nio.ByteBuffer;
 
