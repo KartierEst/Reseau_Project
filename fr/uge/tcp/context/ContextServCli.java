@@ -57,7 +57,7 @@ public class ContextServCli extends Context{
                         logger.info("Get value at null");
                         return;
                     }
-                    server.msgPvFile((MessagePvFile) msgPvFile);
+                    //server.msgPvFile((MessagePvFile) msgPvFile,this);
                     reader.reset();
                     break;
             }

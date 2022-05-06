@@ -102,7 +102,7 @@ public class ServerChaton {
                             logger.info("Get value at null");
                             return;
                         }
-                        msgPvFile((MessagePvFile) msgPvFile);
+                        msgPvFile((MessagePvFile) msgPvFile,this);
                         reader.reset();
                         break;
                 }
@@ -336,9 +336,9 @@ public class ServerChaton {
             updateInterestOps();
         }
 
-        private void queuePvMessageError() {
+        private void queuePvMessageError(String s) {
             var opcode = 7;
-            var text = UTF8.encode("the user doesn't exist");
+            var text = UTF8.encode(s);
             var buffer = ByteBuffer.allocate(text.remaining() + Integer.BYTES * 2);
             buffer.putInt(opcode)
                     .putInt(text.remaining())
@@ -742,60 +742,121 @@ public class ServerChaton {
     }
 
     public void msgPv(MessagePv messagePv,Context context) {
-        if(serverChatons.containsValue(context)) {
-            if (!serverMom.equals(servername)) {
-                for (var client : clients.values()) {
-                    client.queuePvMessage(messagePv);
-                }
-            } else {
-                for (var client : clients.values()) {
-                    client.queuePvMessage(messagePv);
-                }
-                for (var serveur : serverChatons.values()) {
-                    if (!serveur.equals(context)) {
-                        serveur.queuePvMessage(messagePv);
-                    }
-                }
-            }
-        }
         if(clients.containsValue(context)){
-            if (!serverMom.equals(servername)) {
+            var dest_cli = clients.get(messagePv.username_dst());
+            if(dest_cli != null){
+                dest_cli.queuePvMessage(messagePv);
+                return;
+            } else {
+                context.queuePvMessageError("the user : " + messagePv.username_dst() + " doesn't exist");
+            }
+            if(!serverMom.equals(servername)){
                 var ctx = serverChatons.get(serverMom);
                 if(ctx == null){
                     logger.info("the context of the serverMom doesn't exist");
+                    context.queuePvMessageError("you don't have a serverMom ?");
                     return;
                 }
                 ctx.queuePvMessage(messagePv);
-            } else {
-                Context queue = clients.get(messagePv.username_dst());
-                Context username_src = clients.get(messagePv.username_src());
-                if(username_src == null){
-                    logger.warning("the client source have a problem");
+            }
+            else {
+                var dest_serv = serverChatons.get(messagePv.servername_dst());
+                if(dest_serv != null){
+                    dest_serv.queuePvMessage(messagePv);
                 }
                 else {
-                    if (queue == null) {
-                        username_src.queuePvMessageError();
-                        logger.info("the user doesn't exist");
-                    } else {
-                        queue.queuePvMessage(messagePv);
+                    context.queuePvMessageError("the server : " + messagePv.servername_dst() + " don't exist");
+                }
+            }
+        }
+        if(serverChatons.containsValue(context)){
+            if(!serverMom.equals(servername)){
+                var dest_cli = clients.get(messagePv.username_dst());
+                if(dest_cli != null){
+                    dest_cli.queuePvMessage(messagePv);
+                }
+                else{
+                    context.queuePvMessageError("no user : " + messagePv.username_dst() + " in this server");
+                }
+            }
+            else {
+                if(messagePv.servername_dst().equals(serverMom)){
+                    var dest_cli = clients.get(messagePv.username_dst());
+                    if(dest_cli != null){
+                        dest_cli.queuePvMessage(messagePv);
+                        return;
                     }
+                    else {
+                        context.queuePvMessageError("the user : " + messagePv.username_dst() + " doesn't exist");
+                    }
+                }
+                var dest_serv = serverChatons.get(messagePv.servername_dst());
+                if(dest_serv != null){
+                    dest_serv.queuePvMessage(messagePv);
+                }
+                else {
+                    context.queuePvMessageError("no server with this name : " + messagePv.servername_dst() +", so no user with this name : " + messagePv.username_dst());
                 }
             }
         }
     }
 
-    public void msgPvFile(MessagePvFile messagePvFile) {
-        var queue = clients.get(messagePvFile.username_dst());
-        var username_src = clients.get(messagePvFile.username_src());
-        if(username_src == null){
-            logger.warning("the client source have a problem");
-        }
-        else {
-            if (queue == null) {
-                username_src.queuePvMessageError();
-                logger.info("the user doesn't exist");
+    public void msgPvFile(MessagePvFile messagePvFile,Context context) {
+        if(clients.containsValue(context)){
+            var dest_cli = clients.get(messagePvFile.username_dst());
+            if(dest_cli != null){
+                dest_cli.queuePvMessageFile(messagePvFile);
+                return;
             } else {
-                queue.queuePvMessageFile(messagePvFile);
+                context.queuePvMessageError("the user : " + messagePvFile.username_dst() + " doesn't exist");
+            }
+            if(!serverMom.equals(servername)){
+                var ctx = serverChatons.get(serverMom);
+                if(ctx == null){
+                    logger.info("the context of the serverMom doesn't exist");
+                    context.queuePvMessageError("you don't have a serverMom ?");
+                    return;
+                }
+                ctx.queuePvMessageFile(messagePvFile);
+            }
+            else {
+                var dest_serv = serverChatons.get(messagePvFile.servername_dst());
+                if(dest_serv != null){
+                    dest_serv.queuePvMessageFile(messagePvFile);
+                }
+                else {
+                    context.queuePvMessageError("the server : " + messagePvFile.servername_dst() + " don't exist");
+                }
+            }
+        }
+        if(serverChatons.containsValue(context)){
+            if(!serverMom.equals(servername)){
+                var dest_cli = clients.get(messagePvFile.username_dst());
+                if(dest_cli != null){
+                    dest_cli.queuePvMessageFile(messagePvFile);
+                }
+                else{
+                    context.queuePvMessageError("no user : " + messagePvFile.username_dst() + " in this server");
+                }
+            }
+            else {
+                if(messagePvFile.servername_dst().equals(serverMom)){
+                    var dest_cli = clients.get(messagePvFile.username_dst());
+                    if(dest_cli != null){
+                        dest_cli.queuePvMessageFile(messagePvFile);
+                        return;
+                    }
+                    else {
+                        context.queuePvMessageError("the user : " + messagePvFile.username_dst() + " doesn't exist");
+                    }
+                }
+                var dest_serv = serverChatons.get(messagePvFile.servername_dst());
+                if(dest_serv != null){
+                    dest_serv.queuePvMessageFile(messagePvFile);
+                }
+                else {
+                    context.queuePvMessageError("no server with this name : " + messagePvFile.servername_dst() +", so no user with this name : " + messagePvFile.username_dst());
+                }
             }
         }
     }
@@ -866,7 +927,6 @@ public class ServerChaton {
         Context ctx = (Context) key.attachment();
         if(servername.length() < initFusion.servername().length()){
             serverChatons.put(servername,ctx);
-
         }
         else if(servername.length() > initFusion.servername().length()){
             serverChatons.put(initFusion.servername(),ctx);
@@ -957,7 +1017,6 @@ public class ServerChaton {
                             sc.configureBlocking(false);
                             var key = sc.register(selector, SelectionKey.OP_CONNECT);
                             key.attach(new Context(key));
-                            var queue = (Context) key.attachment();
                             sc.connect(tofusion);
                         } else {
                             var queue = serverChatons.get(serverMom);

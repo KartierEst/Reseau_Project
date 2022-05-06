@@ -450,10 +450,10 @@ public class ClientChat {
                         var dest = split[0].split(":");
                         var login_dst = dest[0];
                         var servername_dst = dest[1];
-                        if (!servername_dst.equals(servername)) {
+                        /*if (!servername_dst.equals(servername)) {
                             logger.info("impossible to send this message to " + login_dst + " because you are not in the same server");
                             return;
-                        }
+                        }*/
                         uniqueContext.queuePvMessage(new MessagePv(5, servername, servername_dst, login, login_dst, string.substring(2+login_dst.length()+servername_dst.length())));
                         return;
                     } catch(ArrayIndexOutOfBoundsException e){
@@ -468,10 +468,10 @@ public class ClientChat {
                         var dest = split[0].split(":");
                         var login_dst = dest[0];
                         var servername_dst = dest[1];
-                        if (!servername_dst.equals(servername)) {
+                        /*if (!servername_dst.equals(servername)) {
                             logger.info("impossible to send this message to " + login_dst + " because you are not in the same server");
                             return;
-                        }
+                        }*/
                         if(split.length > 2){
                             logger.info("your private message with file is malformed -> @user:server filename");
                             return;
