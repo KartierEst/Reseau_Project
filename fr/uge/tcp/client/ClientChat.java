@@ -346,7 +346,7 @@ public class ClientChat {
          * Performs the write action on sc
          *
          * The convention is that both buffers are in write-mode before the call to
-         * doWrite and after the call
+         * doWrite and after the callsev
          *
          * @throws IOException
          * @param login

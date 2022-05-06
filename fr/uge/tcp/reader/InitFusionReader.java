@@ -27,12 +27,9 @@ public class InitFusionReader implements Reader<InitFusion> {
         var status = ProcessStatus.ERROR;
         if (state == State.WAITING_SERVERNAME) {
             status = stringReader.process(buffer);
-            System.out.println(status); //done
             if (status == ProcessStatus.DONE) {
-                System.out.println("servername");
                 servername = stringReader.get();
                 if(servername == null || servername.length() > 100){
-                    System.out.println("servername error");
                     state = State.ERROR;
                     return ProcessStatus.ERROR;
                 }
@@ -42,12 +39,9 @@ public class InitFusionReader implements Reader<InitFusion> {
         }
         if (state == State.WAITING_SERVERADRESS) {
             status = iPv6AdressReader.process(buffer);
-            System.out.println(status); // DONE
             if (status == ProcessStatus.DONE) {
-                System.out.println("serveradress");
                 localAdress = iPv6AdressReader.get();
                 if(localAdress.port() > 65535 || localAdress.port() < 0){
-                    System.out.println("serveradress erreur");
                     state = State.ERROR;
                     return ProcessStatus.ERROR;
                 }
@@ -60,15 +54,12 @@ public class InitFusionReader implements Reader<InitFusion> {
             status = intReader.process(buffer); // refill
             System.out.println(status);
             if (status == ProcessStatus.DONE) {
-                System.out.println("nb members");
                 nb_members = intReader.get();
                 if(nb_members < 0){
-                    System.out.println("nb members erreur");
                     state = State.ERROR;
                     return ProcessStatus.ERROR;
                 }
                 intReader.reset();
-                System.out.println("NB MEMBER " + nb_members);
                 if(nb_members == 0){
                    state = State.DONE;
                    return status;

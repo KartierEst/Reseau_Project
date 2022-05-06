@@ -39,10 +39,10 @@ public class ContextCoServ extends Context {
     @Override
     public void connexionResp(boolean close) {
         if(close){
-            bufferOut.putInt(3).putInt(server.getServername().getBytes(StandardCharsets.UTF_8).length).put(UTF8.encode(server.getServername()));
+            //bufferOut.putInt(3).putInt(server.getServername().getBytes(StandardCharsets.UTF_8).length).put(UTF8.encode(server.getServername()));
             return;
         }
-        bufferOut.putInt(2).putInt(server.getServername().getBytes(StandardCharsets.UTF_8).length).put(UTF8.encode(server.getServername()));
+        //bufferOut.putInt(2).putInt(server.getServername().getBytes(StandardCharsets.UTF_8).length).put(UTF8.encode(server.getServername()));
     }
 
     public void queueInitFusionIpv6(InitFusion initFusion) {

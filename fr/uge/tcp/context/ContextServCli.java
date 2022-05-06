@@ -36,7 +36,7 @@ public class ContextServCli extends Context{
                         logger.info("Get value at null");
                         return;
                     }
-                    server.msgPv((MessagePv) msgPvR);
+                    //server.msgPv((MessagePv) msgPvR);
                     reader.reset();
                     break;
             }
@@ -78,7 +78,7 @@ public class ContextServCli extends Context{
                         logger.info("Get value at null");
                         return;
                     }
-                    server.broadcast((MessagePub) r);
+                    //server.broadcast((MessagePub) r);
                     reader.reset();
                     break;
             }

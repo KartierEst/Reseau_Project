@@ -2,7 +2,6 @@ package fr.uge.tcp.reader;
 
 
 import fr.uge.tcp.frame.IPv6Adress;
-import fr.uge.tcp.frame.IPvAdress;
 
 import java.nio.ByteBuffer;
 
@@ -34,7 +33,6 @@ public class IPv6AdressReader implements Reader<IPv6Adress> {
         if(state == State.WAITING_ALL_SHORT){
             status = shortReader.process(buffer);
             if(status == ProcessStatus.DONE) {
-                System.out.println("a");
                 a = shortReader.get();
                 if (a < 0) {
                     state = State.ERROR;
@@ -46,7 +44,6 @@ public class IPv6AdressReader implements Reader<IPv6Adress> {
         if(state == State.WAITING_ALL_SHORT){
             status = shortReader.process(buffer);
             if(status == ProcessStatus.DONE) {
-                System.out.println("b");
                 b = shortReader.get();
                 if (b < 0) {
                     state = State.ERROR;
@@ -58,7 +55,6 @@ public class IPv6AdressReader implements Reader<IPv6Adress> {
         if(state == State.WAITING_ALL_SHORT){
             status = shortReader.process(buffer);
             if(status == ProcessStatus.DONE) {
-                System.out.println("c");
                 c = shortReader.get();
                 if (c < 0) {
                     state = State.ERROR;
