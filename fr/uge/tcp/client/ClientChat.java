@@ -76,7 +76,7 @@ public class ClientChat {
                             logger.info("Get value at null");
                             return;
                         }
-                        System.out.println("\nYou have a message from : " + getPrivateReader.username_src());
+                        System.out.println("\nYou have a message from : " + getPrivateReader.username_src() + "\n");
                         System.out.println(getPrivateReader.username_src() + " : " + getPrivateReader.message());
                         reader.reset();
                         break;

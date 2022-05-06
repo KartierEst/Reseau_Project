@@ -55,7 +55,7 @@ public class ContextServServ extends Context{
                         return;
                     }
                     System.out.println("ca passe ok");
-                    server.fusionOk((InitFusion) initFusR);
+                    //server.fusionOk((InitFusion) initFusR);
                     reader.reset();
                     break;
             }
