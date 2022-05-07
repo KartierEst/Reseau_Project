@@ -12,10 +12,13 @@ import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Objects;
 import java.util.Scanner;
 import java.util.logging.Logger;
+
+import static java.nio.file.StandardOpenOption.*;
 
 
 public class ClientChat {
@@ -76,7 +79,7 @@ public class ClientChat {
                             logger.info("Get value at null");
                             return;
                         }
-                        System.out.println("\nYou have a message from : " + getPrivateReader.username_src() + "\n");
+                        System.out.println("\nYou have a message from : " + getPrivateReader.username_src() + " on the serveur " + servername +"\n");
                         System.out.println(getPrivateReader.username_src() + " : " + getPrivateReader.message());
                         reader.reset();
                         break;
@@ -101,6 +104,14 @@ public class ClientChat {
                         }
                         System.out.println("You have a message with a file from : " + getFileReader.username_src());
                         System.out.println(getFileReader.username_src() + " : " + getFileReader.filename());
+
+                        try(var outChannel = FileChannel.open(Path.of(path + "/" + getFileReader.filename()),WRITE,CREATE,TRUNCATE_EXISTING)){
+                            outChannel.write(getFileReader.block());
+                        } catch (IOException e) {
+                            logger.warning("impossible to open the file");
+                            reader.reset();
+                            return;
+                        }
                         reader.reset();
                         break;
                 }
@@ -172,7 +183,7 @@ public class ClientChat {
                             logger.info("Get value at null");
                             return;
                         }
-                        System.out.println(user.username() + " : " + user.message());
+                        System.out.println("\nserveur : " + servername + "\n" + user.username() + " : " + user.message() + "\n");
                         reader.reset();
                         break;
                 }
@@ -239,7 +250,8 @@ public class ClientChat {
             var username_dst = UTF8.encode(msg.username_dst());
             var filename = UTF8.encode(msg.filename());
 
-            var buffer = ByteBuffer.allocate(servername_src.remaining() + servername_dst.remaining() + username_src.remaining() + username_dst.remaining() + filename.remaining() + Integer.BYTES * 9);
+            var buffer = ByteBuffer.allocate(servername_src.remaining() + servername_dst.remaining()
+                    + username_src.remaining() + username_dst.remaining() + filename.remaining() + Integer.BYTES * 8 + block.remaining());
             buffer.putInt(opcode)
                     .putInt(servername_src.remaining())
                     .put(servername_src)
@@ -384,7 +396,7 @@ public class ClientChat {
     private final Selector selector;
     private SelectionKey key;
     private final InetSocketAddress serverAddress;
-    private final String path;
+    private final Path path;
     private final String login;
     private String servername;
     private final Thread console;
@@ -397,7 +409,7 @@ public class ClientChat {
         Objects.requireNonNull(path);
         this.serverAddress = serverAddress;
         this.login = login;
-        this.path = path;
+        this.path = Path.of(path);
         this.sc = SocketChannel.open();
         this.selector = Selector.open();
         this.console = new Thread(this::consoleRun);
@@ -454,7 +466,7 @@ public class ClientChat {
                             logger.info("impossible to send this message to " + login_dst + " because you are not in the same server");
                             return;
                         }*/
-                        uniqueContext.queuePvMessage(new MessagePv(5, servername, servername_dst, login, login_dst, string.substring(2+login_dst.length()+servername_dst.length())));
+                        uniqueContext.queuePvMessage(new MessagePv(5, servername, servername_dst, login, login_dst, split[1]));//string.substring(2+login_dst.length()+servername_dst.length())));
                         return;
                     } catch(ArrayIndexOutOfBoundsException e){
                         logger.info("your private message without file is malformed -> @user:server message to user");
@@ -468,6 +480,7 @@ public class ClientChat {
                         var dest = split[0].split(":");
                         var login_dst = dest[0];
                         var servername_dst = dest[1];
+                        var filename = split[1];
                         /*if (!servername_dst.equals(servername)) {
                             logger.info("impossible to send this message to " + login_dst + " because you are not in the same server");
                             return;
@@ -476,8 +489,39 @@ public class ClientChat {
                             logger.info("your private message with file is malformed -> @user:server filename");
                             return;
                         }
-                        uniqueContext.queuePvMessageFile(new MessagePvFile(6, servername, servername_dst, login, login_dst,split[1], 5, 5000, (byte) 1));
-                        return;
+                        try(var inChannel = FileChannel.open(Path.of(path + "/" + filename), READ)) {
+                            var buffer = ByteBuffer.allocateDirect((int) inChannel.size());
+                            while (buffer.hasRemaining()) {
+                                inChannel.read(buffer);
+                            }
+                            buffer.flip();
+                            if(buffer.remaining() > 5000) {
+                                int nbblock = buffer.remaining() / 5000 + 1;
+                                for (int i = 0; i < nbblock; i++) {
+                                    var bufferTmp = ByteBuffer.allocate(BUFFER_SIZE);
+                                    var reste = buffer.remaining() - (i*5000);
+                                    var size = Math.min(reste,5000);
+                                    var pos = i*5000;
+                                    var oldLimit = buffer.limit();
+
+                                    buffer.position(pos);
+                                    buffer.limit(pos + size);
+                                    bufferTmp.put(buffer);
+                                    bufferTmp.flip();
+                                    buffer.limit(oldLimit);
+
+                                    uniqueContext.queuePvMessageFile(new MessagePvFile(6, servername, servername_dst, login, login_dst, split[1], nbblock,size, bufferTmp));
+                                }
+                            }
+                            else {
+                                uniqueContext.queuePvMessageFile(new MessagePvFile(6, servername, servername_dst, login, login_dst, split[1], 1, buffer.remaining(), buffer));
+                            }
+                            return;
+                        }
+                        catch (IOException e) {
+                            logger.warning("the file doesn't exist");
+                            return;
+                        }
                     } catch (ArrayIndexOutOfBoundsException e){
                         logger.info("your private message with file is malformed -> @user:server filename");
                         return;

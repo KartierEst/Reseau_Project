@@ -163,6 +163,8 @@ public class ServerChaton {
         }
 
         private void processChangeLeader(){
+            IPvAdress ipleader = null;
+            String server = null;
             reader = allReader.reader(opcode);
             switch (reader.process(bufferIn)) {
                 case ERROR:
@@ -176,11 +178,29 @@ public class ServerChaton {
                         logger.info("Get value at null");
                         return;
                     }
-                    var ipleader = (IPvAdress) codeReader;
-                    changeClientServer(ipleader);
+                    ipleader = (IPvAdress) codeReader;
                     reader.reset();
                     break;
             }
+            reader = allReader.reader(1);
+            switch (reader.process(bufferIn)) {
+                case ERROR:
+                    logger.info("impossible to change the leader");
+                    silentlyClose();
+                case REFILL:
+                    return;
+                case DONE:
+                    var str = reader.get();
+                    if (str == null) {
+                        logger.info("Get value at null");
+                        return;
+                    }
+                    server = (String) str;
+                    reader.reset();
+                    break;
+            }
+            changeClientServer(ipleader,server);
+
         }
 
         private void processMergeLeader(){
@@ -198,7 +218,7 @@ public class ServerChaton {
                         return;
                     }
                     var str = (String) reader.get();
-                    merge(str);
+                    merge(str,this);
                     reader.reset();
                     break;
             }
@@ -315,7 +335,8 @@ public class ServerChaton {
             var username_dst = UTF8.encode(msg.username_dst());
             var filename = UTF8.encode(msg.filename());
 
-            var buffer = ByteBuffer.allocate(servername_src.remaining() + servername_dst.remaining() + username_src.remaining() + username_dst.remaining() + filename.remaining() + Integer.BYTES * 9);
+            var buffer = ByteBuffer.allocate(servername_src.remaining() + servername_dst.remaining() +
+                    username_src.remaining() + username_dst.remaining() + filename.remaining() + Integer.BYTES * 8 + block.remaining());
             buffer.putInt(opcode)
                     .putInt(servername_src.remaining())
                     .put(servername_src)
@@ -380,22 +401,20 @@ public class ServerChaton {
             updateInterestOps();
         }
 
-        public void queueInitFusionFwd(String localAdress) {
-            var locadr = UTF8.encode(localAdress);
-            var buffer = ByteBuffer.allocate(2*Integer.BYTES + locadr.remaining());
+        public void queueInitFusionFwd(IPvAdress localAdress) {
+            var locadr = localAdress.queueIpv();
+            var buffer = ByteBuffer.allocate(Integer.BYTES + locadr.remaining());
             buffer.putInt(11)
-                    .putInt(locadr.remaining())
                     .put(locadr);
             queue.offer(buffer);
             processOut();
             updateInterestOps();
         }
 
-        public void queueInitFusionRequest(String localAdress) {
-            var locadr = UTF8.encode(localAdress);
-            var buffer = ByteBuffer.allocate(2*Integer.BYTES + locadr.remaining());
+        public void queueInitFusionRequest(IPvAdress localAdress) {
+            var locadr = localAdress.queueIpv();
+            var buffer = ByteBuffer.allocate(Integer.BYTES + locadr.remaining());
             buffer.putInt(12)
-                    .putInt(locadr.remaining())
                     .put(locadr);
             queue.offer(buffer);
             processOut();
@@ -424,12 +443,16 @@ public class ServerChaton {
         }
 
 
-        public void queueChangeLeader(IPvAdress localAddress) {
+        public void queueChangeLeader(IPvAdress localAddress,String str) {
             var opcode = 14;
             var buffip = localAddress.queueIpv();
-            var buffer = ByteBuffer.allocate(Integer.BYTES + buffip.remaining());
+            var buffstr = UTF8.encode(str);
+            var buffer = ByteBuffer.allocate(2*Integer.BYTES + buffip.remaining() + buffstr.remaining());
             buffer.putInt(opcode)
-                    .put(buffip);
+                    .put(buffip)
+                    .putInt(buffstr.remaining())
+                    .put(buffstr);
+
             queue.offer(buffer.flip());
             processOut();
             updateInterestOps();
@@ -563,15 +586,18 @@ public class ServerChaton {
                 return; // the selector gave a bad hint
             }
             key.interestOps(SelectionKey.OP_WRITE);
+            SocketChannel ss = (SocketChannel) key.channel();
+            var size = ss.getRemoteAddress().toString().length();
+            int port = Integer.parseInt(ss.getLocalAddress().toString().substring(size-4));
             var serveurnames = serverChatons.keySet().stream().filter(e -> !(servername.equals(e))).toList();
             if(addr.length < 3){
                 var parseIpv4 = adresseFusion.split("\\.");
-                var ipv4 = new IPv4Adress(Byte.parseByte(parseIpv4[0]),Byte.parseByte(parseIpv4[1]),Byte.parseByte(parseIpv4[2]),Byte.parseByte(parseIpv4[3]),portFusion);
+                var ipv4 = new IPv4Adress(Byte.parseByte(parseIpv4[0]),Byte.parseByte(parseIpv4[1]),Byte.parseByte(parseIpv4[2]),Byte.parseByte(parseIpv4[3]),port);
                 queueInitFusionIp(new InitFusion(8, servername, ipv4, serveurnames));
             }
             else {
                 var ipv6 = new IPv6Adress(Short.parseShort(addr[0].substring(1)), Short.parseShort(addr[1]), Short.parseShort(addr[2]), Short.parseShort(addr[3]), Short.parseShort(addr[4])
-                        , Short.parseShort(addr[5]), Short.parseShort(addr[6]), Short.parseShort(addr[7].substring(0, addr[7].length() - 1)), portFusion);
+                        , Short.parseShort(addr[5]), Short.parseShort(addr[6]), Short.parseShort(addr[7].substring(0, addr[7].length() - 1)), port);
                 queueInitFusionIp(new InitFusion(8, servername, ipv6, serveurnames));
             }
         }
@@ -592,7 +618,7 @@ public class ServerChaton {
     private String adresseFusion = null;
 
     private String[] addr = null;
-    private int portFusion = -1;
+    //private int portFusion = -1;
 
     private final ServerSocketChannel serverSocketChannel;
     private final Selector selector;
@@ -753,14 +779,16 @@ public class ServerChaton {
     }
 
     public void msgPv(MessagePv messagePv,Context context) {
-        if(clients.containsValue(context)){
+        if(messagePv.servername_dst().equals(messagePv.servername_src())){
             var dest_cli = clients.get(messagePv.username_dst());
-            if(dest_cli != null){
+            if (dest_cli != null) {
                 dest_cli.queuePvMessage(messagePv);
-                return;
             } else {
-                context.queuePvMessageError("the user : " + messagePv.username_dst() + " doesn't exist");
+                context.queuePvMessageError("the user " + messagePv.username_dst() + " does'nt exist");
             }
+            return;
+        }
+        if(clients.containsValue(context)){
             if(!serverMom.equals(servername)){
                 var ctx = serverChatons.get(serverMom);
                 if(ctx == null){
@@ -795,11 +823,11 @@ public class ServerChaton {
                     var dest_cli = clients.get(messagePv.username_dst());
                     if(dest_cli != null){
                         dest_cli.queuePvMessage(messagePv);
-                        return;
                     }
                     else {
-                        context.queuePvMessageError("the user : " + messagePv.username_dst() + " doesn't exist");
+                        context.queuePvMessageError("the user : " + messagePv.username_dst() + " doesn't exist serverMom " + serverMom);
                     }
+                    return;
                 }
                 var dest_serv = serverChatons.get(messagePv.servername_dst());
                 if(dest_serv != null){
@@ -813,14 +841,16 @@ public class ServerChaton {
     }
 
     public void msgPvFile(MessagePvFile messagePvFile,Context context) {
-        if(clients.containsValue(context)){
+        if(messagePvFile.servername_dst().equals(messagePvFile.servername_src())){
             var dest_cli = clients.get(messagePvFile.username_dst());
-            if(dest_cli != null){
+            if (dest_cli != null) {
                 dest_cli.queuePvMessageFile(messagePvFile);
-                return;
-            }/* else {
-                context.queuePvMessageError("the user : " + messagePvFile.username_dst() + " doesn't exist");
-            }*/
+            } else {
+                context.queuePvMessageError("the user " + messagePvFile.username_dst() + " does'nt exist");
+            }
+            return;
+        }
+        if(clients.containsValue(context)){
             if(!serverMom.equals(servername)){
                 var ctx = serverChatons.get(serverMom);
                 if(ctx == null){
@@ -855,11 +885,11 @@ public class ServerChaton {
                     var dest_cli = clients.get(messagePvFile.username_dst());
                     if(dest_cli != null){
                         dest_cli.queuePvMessageFile(messagePvFile);
-                        return;
                     }
-                    /*else {
-                        context.queuePvMessageError("the user : " + messagePvFile.username_dst() + " doesn't exist");
-                    }*/
+                    else {
+                        context.queuePvMessageError("the user : " + messagePvFile.username_dst() + " doesn't exist serverMom " + serverMom);
+                    }
+                    return;
                 }
                 var dest_serv = serverChatons.get(messagePvFile.servername_dst());
                 if(dest_serv != null){
@@ -875,8 +905,28 @@ public class ServerChaton {
     public void initFusion(InitFusion initFusion) {
         try {
             var serveurnames = serverChatons.keySet().stream().toList();
-            var key = selector.keys().stream().toList().get(selector.keys().size() - 2);
-            logger.info(key.channel().toString());
+            SelectionKey key = null;
+            for(var ooo : selector.keys().stream().toList()){
+                if(ooo.channel() == serverSocketChannel){
+                    continue;
+                }
+                try {
+                    var o = (SocketChannel) ooo.channel();
+                    var str = o.getRemoteAddress().toString();
+                    var size = o.getRemoteAddress().toString().length();
+                    var fin = str.substring(size-5);
+                    logger.info(fin + " " + initFusion.localAddress().port());
+                    if(Integer.parseInt(fin) == initFusion.localAddress().port()){
+                        key = ooo;
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            if (key == null) {
+                logger.warning("key is null, no server can connect");
+                return;
+            }
             var queue = (Context) key.attachment();
             serverChatons.put(initFusion.servername(),queue);
             if(this.servername.equals(serverMom)){
@@ -906,8 +956,8 @@ public class ServerChaton {
             }
             else{
                 //queue = (Context) this..keyServer.attachment();
-                queue = serverChatons.get(servername);
-                queue.queueInitFusionFwd(queue.sc.getLocalAddress().toString());
+                queue = serverChatons.get(serverMom);
+                queue.queueInitFusionFwd(initFusion.localAddress());
             }
         }catch (IOException e){
             logger.info("error with the local address of the server");
@@ -939,11 +989,10 @@ public class ServerChaton {
         Context ctx = (Context) key.attachment();
         serverChatons.put(initFusion.servername(),ctx);
         var thisServerCtx = serverChatons.get(initFusion.servername());
-        //var serveurnames = serverChatons.keySet().stream().toList();
         var addresse = serverSocketChannel.getLocalAddress().toString().substring(1);
         var addr = addresse.split(":");
         var port = Integer.parseInt(addr[addr.length-1]);
-        IPvAdress ipv = null;
+        IPvAdress ipv;
         if(addr.length < 3){
             var parseIpv4 = addresse.split("\\.");
              ipv = new IPv4Adress(Byte.parseByte(parseIpv4[0]),Byte.parseByte(parseIpv4[1]),Byte.parseByte(parseIpv4[2]),Byte.parseByte(parseIpv4[3]),port);
@@ -954,13 +1003,11 @@ public class ServerChaton {
         }
         if(servername.length() < initFusion.servername().length()){
             for(var context : serverChatons.values()){
-                context.queueChangeLeader(ipv);
+                context.queueChangeLeader(ipv,servername);
             }
         }
 
         else if(servername.length() > initFusion.servername().length()){
-            //serverChatons.put(initFusion.servername(),ctx);
-            //var thisServerCtx = serverChatons.get(initFusion.servername());
             logger.info(initFusion.localAddress().toString());
             for(var context : serverChatons.values()){
                 if(thisServerCtx.equals(context)){
@@ -968,38 +1015,38 @@ public class ServerChaton {
                     context.queueFusionMerge(servername);
                 }
                 else{
-                    context.queueChangeLeader(initFusion.localAddress());
+                    context.queueChangeLeader(initFusion.localAddress(),initFusion.servername());
                 }
             }
         }
         else if (servername.compareTo(initFusion.servername()) > 0) {
-            //serverChatons.put(initFusion.servername(),ctx);
             for(var context : serverChatons.values()){
-                context.queueChangeLeader(ipv);
+                context.queueChangeLeader(ipv,servername);
             }
         }
         else if (servername.compareTo(initFusion.servername()) < 0) {
-            //serverChatons.put(initFusion.servername(),ctx);
-            //var thisServerCtx = serverChatons.get(initFusion.servername());
             for(var context : serverChatons.values()){
                 if(thisServerCtx.equals(context)){
                     serverMom = initFusion.servername();
                     context.queueFusionMerge(servername);
                 }
                 else{
-                    context.queueChangeLeader(initFusion.localAddress());
+                    context.queueChangeLeader(initFusion.localAddress(),initFusion.servername());
                 }
             }
         }
         fusion = false;
     }
 
-    private void changeClientServer(IPvAdress ipleader) {
+    private void changeClientServer(IPvAdress ipleader,String str) {
         try {
-            var tofusion = new InetSocketAddress(ipleader.toString(), ipleader.port());
-            sc.configureBlocking(false);
-            sc.connect(tofusion);
-            var key = selector.keys().stream().toList().get(selector.keys().size()-2);
+            if(sc.isConnected()) {
+                var tofusion = new InetSocketAddress(ipleader.toString(), ipleader.port());
+                sc.finishConnect();
+                sc.configureBlocking(false);
+                sc.connect(tofusion);
+            }
+            var key = selector.keys().stream().toList().get(selector.keys().size() - 2);
             var ctx = (Context) key.attachment();
             ctx.queueFusionMerge(servername);
         } catch (IOException e){
@@ -1007,8 +1054,10 @@ public class ServerChaton {
         }
     }
 
-    private void merge(String str){
-        fusion = false;
+    private void merge(String str,Context ctx){
+        if(!serverChatons.containsKey(str)){
+            serverChatons.put(str,ctx);
+        }
         logger.info("the serveur : " + str + " are merge");
     }
 
@@ -1038,13 +1087,15 @@ public class ServerChaton {
                 if (!cmdFusion[0].equals("FUSION")) {
                     logger.warning("Unknown command: " + command + " -> FUSION ipaddress port");
                 } else {
+                    if(Integer.parseInt(cmdFusion[2]) == serverSocketChannel.socket().getLocalPort()){
+                        logger.info("it's this server, impossible to fusion");
+                        return;
+                    }
                     if (!fusion) {
                         fusion = true;
                         if (this.servername.equals(serverMom)) {
-                            //var serveurnames = serverChatons.keySet().stream().toList();
                             adresseFusion = serverSocketChannel.getLocalAddress().toString().substring(1);
                             addr = adresseFusion.split(":");
-                            portFusion = Integer.parseInt(addr[addr.length - 1]);
 
                             tofusion = new InetSocketAddress(cmdFusion[1], Integer.parseInt(cmdFusion[2]));
 
@@ -1054,8 +1105,7 @@ public class ServerChaton {
                             sc.connect(tofusion);
                         } else {
                             var queue = serverChatons.get(serverMom);
-                            var adress = serverChatons.get(servername).sc.getLocalAddress();
-                            queue.queueInitFusionRequest(adress.toString());
+                            queue.queueInitFusionRequest(new IPv4Adress((byte) 1, (byte) 2, (byte) 3, (byte) 4,45));
                         }
                     } else {
                         var queue = serverChatons.get(serverMom);

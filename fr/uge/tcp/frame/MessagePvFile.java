@@ -2,7 +2,7 @@ package fr.uge.tcp.frame;
 
 import java.util.Objects;
 
-public record MessagePvFile(int opcode, String servername_src, String servername_dst, String username_src, String username_dst, String filename, int nbblock, int blocksize, byte block) implements Frame {
+public record MessagePvFile(int opcode, String servername_src, String servername_dst, String username_src, String username_dst, String filename, int nbblock, int blocksize, java.nio.ByteBuffer block) implements Frame {
     public MessagePvFile{
         Objects.requireNonNull(servername_src);
         Objects.requireNonNull(servername_dst);
