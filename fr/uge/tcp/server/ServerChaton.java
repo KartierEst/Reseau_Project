@@ -607,7 +607,7 @@ public class ServerChaton {
     private static final Logger logger = Logger.getLogger(ServerChaton.class.getName());
     private final HashMap<String, Context> clients = new HashMap<>();
     private final HashMap<String,Context> serverChatons = new HashMap<>();
-    private String serverMom;
+    private boolean serverMom;
     private String command;
     private final Object lock = new Object();
     private boolean fusion = false;
@@ -636,7 +636,7 @@ public class ServerChaton {
         selector = Selector.open();
         Objects.requireNonNull(servername);
         this.servername = servername;
-        this.serverMom = servername;
+        //this.serverMom = servername;
         this.sc = SocketChannel.open();
         /*var addresse = serverSocketChannel.getLocalAddress().toString().substring(1);
         var addr = addresse.split(":");
@@ -728,7 +728,7 @@ public class ServerChaton {
      */
     public void broadcast(MessagePub msg,Context context) {
         if(serverChatons.containsValue(context)) {
-            if (!serverMom.equals(servername)) {
+            if (!serverMom){//!serverMom.equals(servername)) {
                 for (var client : clients.values()) {
                     client.queueMessage(msg);
                 }
@@ -744,11 +744,11 @@ public class ServerChaton {
             }
         }
         if(clients.containsValue(context)){
-            if (!serverMom.equals(servername)) {
+            if (!serverMom){//!serverMom.equals(servername)) {
                 for (var client : clients.values()) {
                     client.queueMessage(msg);
                 }
-                var ctx = serverChatons.get(serverMom);
+                var ctx = serverChatons.get("serverMom");
                 if(ctx == null){
                     logger.info("the context of the serverMom doesn't exist");
                     return;
@@ -789,8 +789,8 @@ public class ServerChaton {
             return;
         }
         if(clients.containsValue(context)){
-            if(!serverMom.equals(servername)){
-                var ctx = serverChatons.get(serverMom);
+            if(!serverMom){//!serverMom.equals(servername)){
+                var ctx = serverChatons.get("serverMom");
                 if(ctx == null){
                     logger.info("the context of the serverMom doesn't exist");
                     context.queuePvMessageError("you don't have a serverMom ?");
@@ -809,7 +809,7 @@ public class ServerChaton {
             }
         }
         if(serverChatons.containsValue(context)){
-            if(!serverMom.equals(servername)){
+            if(!serverMom){//!serverMom.equals(servername)){
                 var dest_cli = clients.get(messagePv.username_dst());
                 if(dest_cli != null){
                     dest_cli.queuePvMessage(messagePv);
@@ -819,7 +819,7 @@ public class ServerChaton {
                 }
             }
             else {
-                if(messagePv.servername_dst().equals(serverMom)){
+                /*if(messagePv.servername_dst().equals(serverMom)){
                     var dest_cli = clients.get(messagePv.username_dst());
                     if(dest_cli != null){
                         dest_cli.queuePvMessage(messagePv);
@@ -828,7 +828,7 @@ public class ServerChaton {
                         context.queuePvMessageError("the user : " + messagePv.username_dst() + " doesn't exist serverMom " + serverMom);
                     }
                     return;
-                }
+                }*/
                 var dest_serv = serverChatons.get(messagePv.servername_dst());
                 if(dest_serv != null){
                     dest_serv.queuePvMessage(messagePv);
@@ -851,8 +851,8 @@ public class ServerChaton {
             return;
         }
         if(clients.containsValue(context)){
-            if(!serverMom.equals(servername)){
-                var ctx = serverChatons.get(serverMom);
+            if(!serverMom){//!serverMom.equals(servername)){
+                var ctx = serverChatons.get("serverMom");
                 if(ctx == null){
                     logger.info("the context of the serverMom doesn't exist");
                     context.queuePvMessageError("you don't have a serverMom ?");
@@ -871,7 +871,7 @@ public class ServerChaton {
             }
         }
         if(serverChatons.containsValue(context)){
-            if(!serverMom.equals(servername)){
+            if(!serverMom){//!serverMom.equals(servername)){
                 var dest_cli = clients.get(messagePvFile.username_dst());
                 if(dest_cli != null){
                     dest_cli.queuePvMessageFile(messagePvFile);
@@ -881,7 +881,7 @@ public class ServerChaton {
                 }
             }
             else {
-                if(messagePvFile.servername_dst().equals(serverMom)){
+                /*if(messagePvFile.servername_dst().equals(serverMom)){
                     var dest_cli = clients.get(messagePvFile.username_dst());
                     if(dest_cli != null){
                         dest_cli.queuePvMessageFile(messagePvFile);
@@ -890,7 +890,7 @@ public class ServerChaton {
                         context.queuePvMessageError("the user : " + messagePvFile.username_dst() + " doesn't exist serverMom " + serverMom);
                     }
                     return;
-                }
+                }*/
                 var dest_serv = serverChatons.get(messagePvFile.servername_dst());
                 if(dest_serv != null){
                     dest_serv.queuePvMessageFile(messagePvFile);
@@ -1011,7 +1011,8 @@ public class ServerChaton {
             logger.info(initFusion.localAddress().toString());
             for(var context : serverChatons.values()){
                 if(thisServerCtx.equals(context)){
-                    serverMom = initFusion.servername();
+                    //serverMom = initFusion.servername();
+                    serverMom = false;
                     context.queueFusionMerge(servername);
                 }
                 else{
@@ -1027,7 +1028,8 @@ public class ServerChaton {
         else if (servername.compareTo(initFusion.servername()) < 0) {
             for(var context : serverChatons.values()){
                 if(thisServerCtx.equals(context)){
-                    serverMom = initFusion.servername();
+                    //serverMom = initFusion.servername();
+                    serverMom = false;
                     context.queueFusionMerge(servername);
                 }
                 else{

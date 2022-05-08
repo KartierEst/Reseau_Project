@@ -169,6 +169,7 @@ public class ClientChat {
          *
          */
         private void processIn() {
+
             reader = allReader.reader(opcode);
             while (bufferIn.hasRemaining()) {
                 switch (reader.process(bufferIn)) {
